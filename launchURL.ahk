@@ -21,12 +21,12 @@ global applicationTitle := "Browser_Picker"
 global browsers := [{ Name: "Firefox", Path: "C:\Program Files\Mozilla Firefox\firefox.exe" }, { Name: "Brave", Path: "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" }, { Name: "Zen", Path: "C:\Program Files\Zen Browser\zen.exe" }
 ]
 global currentBrowserIndex := 1
+global settingsFileName := "settings.ini"
 DetectHiddenWindows True
 hw := WinExist(applicationTitle " ahk_exe AutoHotkey64.exe") ; When launched with AHK Interpreter
 hw2 := WinExist(applicationTitle " ahk_exe launchURL.exe") ; When launched with compiled version
 
 if (hw) {
-    msgbox ("Instance already running")
     ; Send the URL string to the running instance using WM_COPYDATA
     if (A_Args.Length >= 1) {
         TargetURL := A_Args[1]
@@ -35,7 +35,6 @@ if (hw) {
     ExitApp()
 }
 else if (hw2) {
-    msgbox ("Instance already running")
     if (A_Args.Length >= 1) {
         TargetURL := A_Args[1]
         SendCopyData(hw2, TargetURL)
@@ -59,10 +58,15 @@ gui_constructor() {
 
     ; Add the dropdown and select the current one
     ChooseDrop := MyGui.AddDropDownList("Choose" CurrentBrowserIndex " w200", BrowserNames)
+
+    currentIndex := IniRead(settingsFileName, "Settings", "CurrentBrowserIndex", "1")
+    ChooseDrop.Value := Number(currentIndex)
+    global currentBrowserIndex := ChooseDrop.Value
     ChooseDrop.OnEvent("Change", OnBrowserChange)
 
     OnBrowserChange(CtrlObj, *) {
         global CurrentBrowserIndex := CtrlObj.Value
+        IniWrite(ChooseDrop.Value, settingsFileName, "Settings", "CurrentBrowserIndex")
     }
 
     hideGUI(thisGUI) {
