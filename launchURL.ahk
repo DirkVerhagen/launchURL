@@ -49,7 +49,7 @@ global browserGUI := gui_constructor()
 
 gui_constructor() {
     MyGui := Gui("+AlwaysOnTop", applicationTitle)
-    MyGui.AddText("", "Select your default browser:")
+    MyGui.AddText("", "Open URL's with:")
     MyGui.OnEvent("Close", HideGUI)
     ; Map the array names to a simple list for the DropDownList
     BrowserNames := []
