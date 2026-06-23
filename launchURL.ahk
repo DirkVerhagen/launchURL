@@ -18,14 +18,18 @@ Persistent
 #SingleInstance Off
 #Requires AutoHotkey v2.0
 global applicationTitle := "Browser_Picker"
+; Leave this in, just in case the GetInstalledBrowsers function does not work anymore
 global browsers := [{ Name: "Firefox", Path: "C:\Program Files\Mozilla Firefox\firefox.exe" }, { Name: "Brave", Path: "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" }, { Name: "Zen", Path: "C:\Program Files\Zen Browser\zen.exe" }
 ]
 global currentBrowserIndex := 1
+global personalBrowserIndex := 1
+global workBrowserIndex := 1
 global settingsFileName := "settings.ini"
 DetectHiddenWindows True
 hw := WinExist(applicationTitle " ahk_exe AutoHotkey64.exe") ; When launched with AHK Interpreter
 hw2 := WinExist(applicationTitle " ahk_exe launchURL.exe") ; When launched with compiled version
 
+; if either hw1 or hw2 is true, it means either there's an interpreted version or a compiled version of this script already running
 if (hw) {
     ; Send the URL string to the running instance using WM_COPYDATA
     if (A_Args.Length >= 1) {
@@ -41,32 +45,42 @@ else if (hw2) {
     }
     ExitApp()
 }
+; if none of the above evaluated to true this is the first instance running
+; create a GUI and if there are arguments open a URL
 
+browsers := GetInstalledBrowsers()
 
-; if no instance running
 global browserGUI := gui_constructor()
-
 
 gui_constructor() {
     MyGui := Gui("+AlwaysOnTop", applicationTitle)
-    MyGui.AddText("", "Open URL's with:")
+
     MyGui.OnEvent("Close", HideGUI)
-    ; Map the array names to a simple list for the DropDownList
+    MyGui.AddText("", "Personal Browser:")
     BrowserNames := []
     for b in Browsers
         BrowserNames.Push(b.Name)
+    PersonalBrowserDrop := MyGui.AddDropDownList("Choose" personalBrowserIndex " w200", BrowserNames)
+    storedIndex := IniRead(settingsFileName, "Settings", "PersonalBrowserIndex", "1")
+    PersonalBrowserDrop.Value := Number(storedIndex)
+    global personalBrowserIndex := PersonalBrowserDrop.Value
+    PersonalBrowserDrop.OnEvent("Change", OnPersonalBrowserChange)
 
-    ; Add the dropdown and select the current one
-    ChooseDrop := MyGui.AddDropDownList("Choose" CurrentBrowserIndex " w200", BrowserNames)
+    OnPersonalBrowserChange(CtrlObj, *) {
+        global personalBrowserIndex := CtrlObj.Value
+        IniWrite(PersonalBrowserDrop.Value, settingsFileName, "Settings", "PersonalBrowserIndex")
+    }
 
-    currentIndex := IniRead(settingsFileName, "Settings", "CurrentBrowserIndex", "1")
-    ChooseDrop.Value := Number(currentIndex)
-    global currentBrowserIndex := ChooseDrop.Value
-    ChooseDrop.OnEvent("Change", OnBrowserChange)
+    MyGui.AddText("", "Work Browser:")
+    WorkBrowserDrop := MyGui.AddDropDownList("Choose" workBrowserIndex " w200", BrowserNames)
+    storedIndex := IniRead(settingsFileName, "Settings", "WorkBrowserIndex", "1")
+    WorkBrowserDrop.Value := Number(storedIndex)
+    global personalBrowserIndex := WorkBrowserDrop.Value
+    WorkBrowserDrop.OnEvent("Change", OnWorkBrowserChange)
 
-    OnBrowserChange(CtrlObj, *) {
-        global CurrentBrowserIndex := CtrlObj.Value
-        IniWrite(ChooseDrop.Value, settingsFileName, "Settings", "CurrentBrowserIndex")
+    OnWorkBrowserChange(CtrlObj, *) {
+        global workBrowserIndex := CtrlObj.Value
+        IniWrite(WorkBrowserDrop.Value, settingsFileName, "Settings", "WorkBrowserIndex")
     }
 
     hideGUI(thisGUI) {
@@ -85,24 +99,38 @@ Tray.Add("Show Settings", (*) => browserGUI.Show())
 Tray.Add("Exit", (*) => ExitApp())
 Tray.Default := "Show Settings"
 
+
+; If this call had an argument open it. Otherwise show the gui to indicate that we've booted
 if (A_Args.Length >= 1) {
     OpenURL(A_Args[1])
 } else {
     browserGUI.Show()
 }
 
+
+; Start waiting for messages
+OnMessage(0x004A, ReceiveCopyData) ; 0x004A is WM_COPYDATA
+
+; Functions
+
 OpenURL(url) {
-    browserPath := Browsers[CurrentBrowserIndex].Path
+    global personalBrowserIndex
+    global workBrowserIndex
+
+    isWorkDay := (A_WDay >= 2 && A_WDay <= 6) ; 1 is Sunday, 2-6 is Mon-Fri, 7 is Saturday
+    isWorkHour := (A_Hour >= 9 && A_Hour < 17) ; 09:00 to 16:59
+
+    index := personalBrowserIndex
+    if (isWorkDay && isWorkHour)
+        index := workBrowserIndex
+
+    browserPath := Browsers[index].Path
     try {
         Run('"' browserPath '" "' url '"')
     } catch Error as err {
-        MsgBox("Failed to launch " Browsers[CurrentBrowserIndex].Name "`n`n" err.Message, "Error", "IconX")
+        MsgBox("Failed to launch " Browsers[index].Name "`n`n" err.Message, "Error", "IconX")
     }
 }
-
-OnMessage(0x004A, ReceiveCopyData) ; 0x004A is WM_COPYDATA
-
-;; MESSAGING HELPER FUNCTIONS
 
 ReceiveCopyData(wParam, lParam, msg, hwnd) {
     ; Extract the string (URL) from the pointer structure
@@ -125,4 +153,44 @@ SendCopyData(hwndTarget, stringToSend) {
     NumPut("Ptr", buf.Ptr, cds, A_PtrSize * 2)
 
     return SendMessage(0x004A, 0, cds.Ptr, hwndTarget)
+}
+
+GetInstalledBrowsers() {
+    browserList := []
+    regKey := "HKLM\SOFTWARE\Clients\StartMenuInternet"
+
+    ; Loop through the subkeys (each representing an installed browser)
+    Loop Reg, regKey, "K" {
+        browserRegName := A_LoopRegName
+
+        ; 1. Get the friendly display name
+        try {
+            friendlyName := RegRead(regKey "\" browserRegName)
+        } catch {
+            friendlyName := browserRegName ; Fallback if standard value is empty
+        }
+
+        ; 2. Get the execution path
+        try {
+            execPath := RegRead(regKey "\" browserRegName "\shell\open\command")
+
+
+        } catch {
+            continue ; Skip this entry if we can't find a valid path
+        }
+        ; This regular expression assumes a results will look like '"<EXEC PATH>" -- Flags'
+        cleanExecPath := RegExReplace(execPath, '^"([^"]+)"(.*)$', '$1')
+        ; Add it to our array if it exists
+        if FileExist(cleanExecPath) {
+
+            browserList.Push({ Name: friendlyName, Path: cleanExecPath })
+        }
+    }
+
+    ; Fallback in case the registry loop comes up completely empty
+    if (browserList.Length == 0) {
+        browserList.Push({ Name: "Edge (Fallback)", Path: "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" })
+    }
+
+    return browserList
 }
