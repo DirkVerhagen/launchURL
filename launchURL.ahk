@@ -21,10 +21,10 @@ global applicationTitle := "Browser_Picker"
 ; Leave this in, just in case the GetInstalledBrowsers function does not work anymore
 global browsers := [{ Name: "Firefox", Path: "C:\Program Files\Mozilla Firefox\firefox.exe" }, { Name: "Brave", Path: "C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" }, { Name: "Zen", Path: "C:\Program Files\Zen Browser\zen.exe" }
 ]
-global currentBrowserIndex := 1
 global personalBrowserIndex := 1
 global workBrowserIndex := 1
 global settingsFileName := "settings.ini"
+
 DetectHiddenWindows True
 hw := WinExist(applicationTitle " ahk_exe AutoHotkey64.exe") ; When launched with AHK Interpreter
 hw2 := WinExist(applicationTitle " ahk_exe launchURL.exe") ; When launched with compiled version
@@ -53,6 +53,8 @@ browsers := GetInstalledBrowsers()
 global browserGUI := gui_constructor()
 
 gui_constructor() {
+    global personalBrowserIndex
+    global workBrowserIndex
     MyGui := Gui("+AlwaysOnTop", applicationTitle)
 
     MyGui.OnEvent("Close", HideGUI)
@@ -63,24 +65,24 @@ gui_constructor() {
     PersonalBrowserDrop := MyGui.AddDropDownList("Choose" personalBrowserIndex " w200", BrowserNames)
     storedIndex := IniRead(settingsFileName, "Settings", "PersonalBrowserIndex", "1")
     PersonalBrowserDrop.Value := Number(storedIndex)
-    global personalBrowserIndex := PersonalBrowserDrop.Value
+    personalBrowserIndex := PersonalBrowserDrop.Value
     PersonalBrowserDrop.OnEvent("Change", OnPersonalBrowserChange)
 
     OnPersonalBrowserChange(CtrlObj, *) {
-        global personalBrowserIndex := CtrlObj.Value
-        IniWrite(PersonalBrowserDrop.Value, settingsFileName, "Settings", "PersonalBrowserIndex")
+        personalBrowserIndex := CtrlObj.Value
+        IniWrite(personalBrowserIndex, settingsFileName, "Settings", "PersonalBrowserIndex")
     }
 
     MyGui.AddText("", "Work Browser:")
     WorkBrowserDrop := MyGui.AddDropDownList("Choose" workBrowserIndex " w200", BrowserNames)
     storedIndex := IniRead(settingsFileName, "Settings", "WorkBrowserIndex", "1")
     WorkBrowserDrop.Value := Number(storedIndex)
-    global personalBrowserIndex := WorkBrowserDrop.Value
+    workBrowserIndex := WorkBrowserDrop.Value
     WorkBrowserDrop.OnEvent("Change", OnWorkBrowserChange)
 
     OnWorkBrowserChange(CtrlObj, *) {
-        global workBrowserIndex := CtrlObj.Value
-        IniWrite(WorkBrowserDrop.Value, settingsFileName, "Settings", "WorkBrowserIndex")
+        workBrowserIndex := CtrlObj.Value
+        IniWrite(workBrowserIndex, settingsFileName, "Settings", "WorkBrowserIndex")
     }
 
     hideGUI(thisGUI) {
@@ -116,7 +118,24 @@ OnMessage(0x004A, ReceiveCopyData) ; 0x004A is WM_COPYDATA
 OpenURL(url) {
     global personalBrowserIndex
     global workBrowserIndex
+    ; 1. WHITELIST: Detect Microsoft authentication and account handshakes
+    ; These URLs MUST stay in their originating environment to complete OAuth loops.
+    isMSAuth := RegExMatch(url, "i)login\.microsoftonline\.com")
+        || RegExMatch(url, "i)login\.live\.com")
+        || RegExMatch(url, "i)teams\.microsoft\.com/l/auth")
+        || RegExMatch(url, "i)outlook\.office\.com/owa/modules/calendar")
 
+    if (isMSAuth) {
+        try {
+            ; Use standard system execution so Windows handles it internally
+            ; without routing it to a fresh browser selection tab.
+            MsgBox(url)
+            Run(url)
+            return
+        } catch {
+            ; Fall through if native execution fails
+        }
+    }
     isWorkDay := (A_WDay >= 2 && A_WDay <= 6) ; 1 is Sunday, 2-6 is Mon-Fri, 7 is Saturday
     isWorkHour := (A_Hour >= 9 && A_Hour < 17) ; 09:00 to 16:59
 
