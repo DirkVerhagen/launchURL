@@ -1,3 +1,5 @@
+;@Ahk2Exe-SetMainIcon C:\Users\Dirk\Pictures\W-ICO-master\ICO\Devices (Windows 11)\DMPMultimedia.ico
+
 Persistent
 /************************************************************************
  * @description launchURL.ahk
