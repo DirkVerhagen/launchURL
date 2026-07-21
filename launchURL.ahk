@@ -120,6 +120,7 @@ OnMessage(0x004A, ReceiveCopyData) ; 0x004A is WM_COPYDATA
 OpenURL(url) {
     global personalBrowserIndex
     global workBrowserIndex
+    ; msgbox(url)
     ; 1. WHITELIST: Detect Microsoft authentication and account handshakes
     ; These URLs MUST stay in their originating environment to complete OAuth loops.
     isMSAuth := RegExMatch(url, "i)login\.microsoftonline\.com")
