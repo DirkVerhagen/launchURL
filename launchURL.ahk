@@ -1,5 +1,5 @@
 ;@Ahk2Exe-SetMainIcon C:\Users\Dirk\Pictures\W-ICO-master\ICO\Devices (Windows 11)\DMPMultimedia.ico
-
+RunAsTask(false)
 Persistent
 /************************************************************************
  * @description launchURL.ahk
@@ -215,4 +215,22 @@ GetInstalledBrowsers() {
     }
 
     return browserList
+}
+
+RunAsTask(SingleInstance := false) {
+    ; Create a temporary memory buffer to hold the file path string securely
+    buf := Buffer(StrPut(A_ScriptFullPath, "UTF-8"))
+    StrPut(A_ScriptFullPath, buf, "UTF-8")
+
+    ; Generate the unique Task Name utilizing the proper binary pointer type ("ptr")
+    TaskName := "RunAsTask\" A_ScriptName "_" (A_PtrSize * 8) "@" Format("{:08X}", DllCall("ntdll\RtlComputeCrc32", "uint", 0, "ptr", buf, "uint", buf.Size, "uint"))
+
+    if A_IsAdmin {
+        if !RegExMatch(DllCall("GetCommandLine", "str"), " /task")
+            Run('schtasks /delete /f /tn "' TaskName '"', , "Hide")
+        else return
+    }
+    Run('schtasks /create /f /rl highest /tn "' TaskName '" /sc once /st 00:00 /tr "\"' A_AhkPath '\" /task \"' A_ScriptFullPath '\""', , "Hide")
+    Run('schtasks /run /tn "' TaskName '"', , "Hide")
+    ExitApp()
 }
